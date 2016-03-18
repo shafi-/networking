@@ -34,14 +34,14 @@ public class NetworkThread {
                 Logger.getLogger(NetworkThread.class.getName()).log(Level.SEVERE, null, iOException);
                 cont = false;
             }
+            
             while(cont)
             {
+                print("Wait for new connection...");
                 Socket s = ss.accept();
-                print("New user is connectd.");
                 Server server = new Server(s);
                 Thread t = new Thread(server,"client");
                 t.start();
-                print("New server thread is started.");
             }
             
         } catch (IOException ex) {

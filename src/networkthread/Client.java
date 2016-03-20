@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -20,24 +21,23 @@ import java.util.logging.Logger;
 public class Client {
 
     private static String serverReply;
+    private static int isLogIn = 0;
+    private static int debug = 1;
 
     public static void main(String[] args) {
 
         try {
-
-            //print("Create new client...");
             client = new Socket(host, port);
-            //print("Created");
             inputStream = new ObjectInputStream(client.getInputStream());
-            //print("inputStream is connected");
             outputStream = new ObjectOutputStream(client.getOutputStream());
             outputStream.flush();
-            //print("outputStream is connected");
-
+            
             print("Connected with Server through : " + host + ":" + port);
         } catch (IOException iOException) {
             print("Client-Server connection could not be established.");
         }
+        print(getMessage());
+        handleOfflineMessage();
         while (true) {
             task();
         }
@@ -46,8 +46,9 @@ public class Client {
 
     private static void task() {
         String instruction;
-        print(getMessage());
-        instruction = sc.nextLine();
+        //print(getMessage());
+        instruction = getInstruction();
+        //instruction = sc.nextLine();
         switch (instruction) {
             case "register": {
                 register(instruction);
@@ -61,7 +62,11 @@ public class Client {
                 logOut(instruction);
                 break;
             }
-            case "sendmsg": {
+            case "sendmsgto": {
+                sendMessage(instruction);
+                print("Enter friend name: ");
+                String messageTo = sc.nextLine();
+                sendMessage(messageTo);
                 msg = sc.nextLine();
                 sendMessage(msg);
                 break;
@@ -102,7 +107,7 @@ public class Client {
                 disconnect(instruction);
             }
             default: {
-                print("Undefined input. Try again.");
+                print("Undefined input. Try again.["+instruction+"]");
             }
         }
     }
@@ -122,7 +127,9 @@ public class Client {
 
     private static boolean sendMessage(String msg) {
         try {
-            print("You says " + msg);
+            if(debug == 1){
+                print("You says " + msg);
+            }
             outputStream.writeObject(msg);
             outputStream.flush();
             return true;
@@ -143,7 +150,7 @@ public class Client {
     }
 
     private static void register(String instruction) {
-        sendMessage("register");
+        sendMessage(instruction);
         
         String userName;
         userName = sc.nextLine();
@@ -158,7 +165,8 @@ public class Client {
     }
 
     private static void logIn(String instruction) {
-        sendMessage("login");
+        
+        sendMessage(instruction);
         
         String userName;
         userName = sc.nextLine();
@@ -169,13 +177,29 @@ public class Client {
         sendMessage(password);
         
         serverReply = (String) getMessage();
+        
+        if("Success".equals(serverReply))
+        {
+            isLogIn = 1;
+        }
+        else
+        {
+            isLogIn = 0;
+        }
         print(serverReply);
     }
 
     private static void logOut(String instruction) {
-        sendMessage("logOut");
-        serverReply = (String) getMessage();
-        print(serverReply);
+        if(isLogIn == 1)
+        {
+            sendMessage(instruction);
+            serverReply = (String) getMessage();
+            print(serverReply);
+        }
+        else
+        {
+            print("You are not logged in.");
+        }
     }
 
     private static void sendFriendRequest(String instruction, String friend) {
@@ -197,9 +221,14 @@ public class Client {
     private static void showOnlineUsers(String instruction) {
         sendMessage(instruction);
         
-        serverReply = (String) getMessage();
+        ArrayList<userPublicData> onlineUsers = new ArrayList<userPublicData>();
         
-        print(serverReply);
+        onlineUsers = (ArrayList<userPublicData>) getMessage();
+        
+        for (userPublicData onlineUser : onlineUsers) {
+            print(onlineUser.userName+"   "+onlineUser.userId);
+        }
+        print(onlineUsers.toString());
     }
 
     private static void showFriendList(String instruction) {
@@ -260,4 +289,31 @@ public class Client {
     private static String name;
     private static ObjectOutputStream outputStream;
     private static ObjectInputStream inputStream;
+
+    private static String getInstruction() {
+        String instruction = null;
+        
+        while(instruction == null)
+        {
+            try {
+                if(inputStream.available() != 0)
+                {
+                    instruction = (String) getMessage();
+                }
+                else if(sc.hasNext())
+                {
+                    instruction = sc.nextLine();
+                }
+            } catch (IOException ex) {
+                //No input from server or user-end
+                Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+        return instruction;
+    }
+
+    private static void handleOfflineMessage() {
+        String offlineMsg = (String) getMessage();
+        print(offlineMsg);
+    }
 }

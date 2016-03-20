@@ -25,7 +25,13 @@ public class Client {
     private static String serverReply;
     private static int isLogIn = 0;
     private static int debug = 1;
-
+    private static int userInput = 0;
+    private static String userInstruction;
+    private static ArrayList<String> friendList;
+    private static ArrayList<String> friendRequest;
+    static Thread t;
+    static TakeInputFromUser tifu;
+    
     public static void main(String[] args) {
 
         try {
@@ -37,6 +43,11 @@ public class Client {
         }
         print(getMessage());
         handleOfflineMessage();
+        
+        tifu = new TakeInputFromUser();
+        t = new Thread(tifu);
+        t.start();
+        
         while (true) {
             task();
         }
@@ -84,6 +95,7 @@ public class Client {
                 String user = (String) getMessage();
                 print("You have a friend request from "+user);
                 print("To accept write accept. To reject write reject.");
+                friendRequest.add(user);
                 handleFriendRequest(user);
             }
             case "freqs": {
@@ -217,6 +229,7 @@ public class Client {
         if(isLogIn == 1)
         {
             sendMessage(instruction);
+            isLogIn = 0;
             serverReply = (String) getMessage();
             print(serverReply);
         }
@@ -245,14 +258,14 @@ public class Client {
     private static void showOnlineUsers(String instruction) {
         sendMessage(instruction);
         
-        ArrayList<userPublicData> onlineUsers = new ArrayList<userPublicData>();
+        ArrayList<Server> onlineUsers = new ArrayList<Server>();
         
         
-        onlineUsers = (ArrayList<userPublicData>) getMessage();
+        onlineUsers = (ArrayList<Server>) getMessage();
         
         print("Online users: ");
-        for (userPublicData onlineUser : onlineUsers) {
-            print(onlineUser.userName+"   "+onlineUser.userId);
+        for (Server server : onlineUsers) {
+            print(server.userName +"   "+server.userId);
         }
         
     }
@@ -338,10 +351,12 @@ public class Client {
                 {
                     instruction = (String) getMessage();
                 }
-                else if(sc.hasNext())
+                else if(tifu.hasInput == 1)
                 {
-                    instruction = sc.nextLine();
+                    instruction = tifu.instruction;
+                    tifu.hasInput = 0;
                 }
+                //print("Debug: "+ tifu.hasInput+ " "+ tifu.instruction);
             } catch (IOException ex) {
                 //No input from server or user-end
                 Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
@@ -360,10 +375,13 @@ public class Client {
         if( reply.equals("accept"))
         {
             acceptFriendRequest(reply,user);
+            friendList.add(user);
+            friendRequest.remove(user);
         }
         else if(reply.equals("reject"))
         {
             rejectFriendRequest(reply, user);
+            friendRequest.remove(user);
         }
         else
         {
@@ -381,4 +399,10 @@ public class Client {
             Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
+
+    static void rcvInstruction(String instruct) {
+        userInput = 1;
+        userInstruction = instruct;
+    }
+    
 }

@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -20,22 +21,23 @@ import java.util.logging.Logger;
  * @author mash
  *
  */
-public class Server implements Runnable {
+public class Server implements Runnable, Serializable{
 
-    private Socket client;
-    private ObjectInputStream inputStream;
-    private ObjectOutputStream outputStream;
-    private int isAuthenticated;
-    private ArrayList<Socket> friendRequestList;
-    private ArrayList<Socket> friendList;
-    private final int userId;
-    private String userName;
-    private String password;
-    private String instruction;
-    private boolean isRegistered = false;
-    private boolean debug;
+    transient private Socket client;
+    transient public ObjectInputStream inputStream;
+    transient public ObjectOutputStream outputStream;
+    transient private int isAuthenticated;
+    transient private ArrayList<userPublicData> friendRequestList;
+    transient private ArrayList<userPublicData> friendList;
+    transient public final int userId;
+    transient public String userName;
+    transient private String password;
+    transient private String instruction;
+    transient private boolean isRegistered = false;
+    transient private boolean debug;
     
     public Server(Socket s, int id) {
+        userName = "user"+id;
         userId = id;
         print("Create new Server instance...");
         client = s;
@@ -77,20 +79,21 @@ public class Server implements Runnable {
                     
                     //check if friend then check if online 
                     
-                    for (userPublicData upd : NetworkThread.connections) {
-                        if(upd.userName.equals(msgto))
+                    for (Server server : NetworkThread.connections) {
+                        if(server.userName.equals(msgto))
                         {
-                            chatWith = upd.socket;
-                            sendMessage("Connection established with "+upd.userName);
+                            chatWith = server.client;
+                            sendMessage("Connection established with "+server.userName);
                             msg = (String) getMessage();
-                            if(sendMessageTo(chatWith,msg))
-                                sendMessage("Message sent to "+upd.userName);                            
+                            
+                            if(sendMessageTo(server.outputStream ,msg))
+                                sendMessage("Message sent to "+server.userName);                            
                             break;
                         }
                         else
                         {
                             msg = (String) getMessage();
-                            storeOfflineMsg(msg,upd.userName);
+                            storeOfflineMsg(msg,server.userName);
                         }
                     }
                     print(msg);
@@ -232,6 +235,13 @@ public class Server implements Runnable {
             if (Auth(usrName, pass)) {
                 isAuthenticated = 1;
                 sendMessage("Success");
+                for(Server server : NetworkThread.connections)
+                {
+                    if(server.userId == userId)
+                    {
+                        server.userName = usrName;
+                    }
+                }
             } else {
                 sendMessage("Username/Password didn't matched.");
             }
@@ -280,16 +290,15 @@ public class Server implements Runnable {
             byte[] content = (byte[]) inputStream.readObject();
             
             //find recver
-            for(userPublicData upd : NetworkThread.connections)
+            for(Server server : NetworkThread.connections)
             {
-                if(recver.equals(upd.userName))
+                if(recver.equals(server.userName))
                 {
-                    ObjectOutputStream oos = new ObjectOutputStream(upd.socket.getOutputStream());
                     
-                    oos.writeObject("rcvfile");
-                    oos.writeObject(userName);
+                    server.outputStream.writeObject("rcvfile");
+                    server.outputStream.writeObject(userName);
                     //oos.writeObject(file);
-                    oos.writeObject(content);
+                    server.outputStream.writeObject(content);
                     break;
                 }
                 else
@@ -355,12 +364,10 @@ public class Server implements Runnable {
         }
     }
 
-    private boolean sendMessageTo(Socket chatWith, String msg) {
+    private boolean sendMessageTo(ObjectOutputStream chatWith, String msg) {
         
-        ObjectOutputStream oos = null;
         try {
-            oos = new ObjectOutputStream(chatWith.getOutputStream());
-            oos.writeObject(msg);
+            chatWith.writeObject(msg);
             print("To: "+ chatWith.toString()+" : "+msg);
             return true;
         } catch (IOException ex) {
@@ -369,7 +376,7 @@ public class Server implements Runnable {
             return false;
         } finally {
             try {
-                oos.close();
+                chatWith.close();
             } catch (IOException ex) {
                 Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
             }
@@ -395,10 +402,10 @@ public class Server implements Runnable {
     }
 
     private void removeFromOnline() {
-        for (userPublicData upd : NetworkThread.connections) {
-            if(upd.userId == userId && upd.userName.equals(userName))
+        for (Server server : NetworkThread.connections) {
+            if(server.userId == userId && server.userName.equals(userName))
             {
-                NetworkThread.connections.remove(upd);
+                NetworkThread.connections.remove(server);
             }
         }
     }
@@ -407,17 +414,15 @@ public class Server implements Runnable {
         
         String user = (String) getMessage();
                     
-        for ( userPublicData upd : NetworkThread.connections) {
-            if(upd.userName.equals(user))
+        for ( Server server : NetworkThread.connections) {
+            if(server.userName.equals(user))
             {
                 try {
                     
-                    ObjectOutputStream oos = new ObjectOutputStream(upd.socket.getOutputStream());
-                    oos.writeObject("rcvfreq");
-                    oos.writeObject(userName);
-                    print(userName + " sent a friend request to "+ upd.userName);
-                    oos.close();
-                
+                    server.outputStream.writeObject("rcvfreq");
+                    server.outputStream.writeObject(userName);
+                    print(userName + " sent a friend request to "+ server.userName);
+                    
                 } catch (IOException ex) {
                     Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
                 }
@@ -435,13 +440,12 @@ public class Server implements Runnable {
         
         String user = (String) getMessage();
         
-        for (userPublicData upd : NetworkThread.connections) {
-            if(upd.userName.equals(user))
+        for (Server server : NetworkThread.connections) {
+            if(server.userName.equals(user))
             {
                 try {
-                    ObjectOutputStream oos = new ObjectOutputStream(upd.socket.getOutputStream());
-                    oos.writeObject(userName + " rejected your friend request.");
-                    oos.close();
+                    server.outputStream.writeObject(userName + " rejected your friend request.");
+                    server.outputStream.close();
                 } catch (IOException ex) {
                     Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
                 }
@@ -455,13 +459,12 @@ public class Server implements Runnable {
            
         String user = (String) getMessage();
         
-        for (userPublicData upd : NetworkThread.connections) {
-            if(upd.userName.equals(user))
+        for (Server server : NetworkThread.connections) {
+            if(server.userName.equals(user))
             {
                 try {
-                    ObjectOutputStream oos = new ObjectOutputStream(upd.socket.getOutputStream());
-                    oos.writeObject(userName + " accepted your friend request.");
-                    oos.close();
+                    server.outputStream.writeObject(userName + " accepted your friend request.");
+                    server.outputStream.close();
                 } catch (IOException ex) {
                     Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
                 }

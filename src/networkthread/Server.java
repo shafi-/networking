@@ -1,9 +1,11 @@
 package networkthread;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -31,11 +33,12 @@ public class Server implements Runnable {
     private String password;
     private String instruction;
     private boolean isRegistered = false;
+    private boolean debug;
     
     public Server(Socket s, int id) {
+        userId = id;
         print("Create new Server instance...");
         client = s;
-        userId = id;
         isAuthenticated = 0;
     }
 
@@ -47,6 +50,7 @@ public class Server implements Runnable {
         sendMessage("Welcome!");
         
         checkOfflieMsg();
+        checkOfflineFile();
         
         while (stopOrRun) {
             instruction = (String) getMessage();
@@ -65,7 +69,8 @@ public class Server implements Runnable {
                     logOut();
                     break;
                 }
-                case "receivemsgto": {  //receiveMessage
+                case "sendmsgto": {  //receiveMessage
+                    
                     String msgto = (String) getMessage();
                     
                     Socket chatWith;
@@ -78,7 +83,9 @@ public class Server implements Runnable {
                             chatWith = upd.socket;
                             sendMessage("Connection established with "+upd.userName);
                             msg = (String) getMessage();
-                            sendMessageTo(chatWith,msg);
+                            if(sendMessageTo(chatWith,msg))
+                                sendMessage("Message sent to "+upd.userName);                            
+                            break;
                         }
                         else
                         {
@@ -90,7 +97,7 @@ public class Server implements Runnable {
                     break;
                 }
                 case "sendfreq": {
-
+                    sendFriendRequest();
                     break;
                 }
                 
@@ -112,20 +119,22 @@ public class Server implements Runnable {
                     break;
                 }
                 case "reject": {
+                    // Code for reject
+                    rejectFriendRequest();
                     break;
                 }
                 case "accept": {
                     acceptFriendRequest();
                     break;
                 }
-                case "sendfile": {
-                    String fileName = (String) getMessage();
-                    recieveFile(fileName);
+                case "sendfile": {   
+                    recieveFileFromClientAndSendTo();                    
                     break;
                 }
 
                 case "exit": {
                     sendMessage("Disconnected!!!");
+                    removeFromOnline();
                     closeStreams();
                     stopOrRun = false;
                 }
@@ -204,6 +213,11 @@ public class Server implements Runnable {
             ud.userName = usrName;
             ud.password = pass;
             NetworkThread.allUsers.add(ud);
+            if(debug)
+            {
+                int index = NetworkThread.allUsers.indexOf(ud);
+                print("Debug: new registered user: "+ NetworkThread.allUsers.get(index).userName);
+            }
             
             sendMessage(usrName + " is registered with password: " + pass);
             isRegistered = true;
@@ -258,11 +272,54 @@ public class Server implements Runnable {
         
     }
 
-    private void acceptFriendRequest() {
+    private void recieveFileFromClientAndSendTo() {
+        try {
+            
+            String recver = (String) getMessage();
+            //File file = (File) inputStream.readObject();
+            byte[] content = (byte[]) inputStream.readObject();
+            
+            //find recver
+            for(userPublicData upd : NetworkThread.connections)
+            {
+                if(recver.equals(upd.userName))
+                {
+                    ObjectOutputStream oos = new ObjectOutputStream(upd.socket.getOutputStream());
+                    
+                    oos.writeObject("rcvfile");
+                    oos.writeObject(userName);
+                    //oos.writeObject(file);
+                    oos.writeObject(content);
+                    break;
+                }
+                else
+                {
+                    String sender = (String) getMessage();
+                    print(sender+" sent a file.");
+                    StoredFile sf = new StoredFile(sender,userName, NetworkThread.storedFileId);
+                    File file = new File((System.getProperty("user.dir")+"/"+NetworkThread.storedFileId ));
+                    Files.write(file.toPath(),content);
+                }
+            }
+            
+        } catch (IOException | ClassNotFoundException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
         
     }
-
-    private void recieveFile(String fileName) {
+    
+    private void recieveFileFromFriend() {
+        try {
+            String sender = (String) getMessage();
+            File file = (File) inputStream.readObject();
+            //sendToClient();
+            sendMessage("rcvfile");
+            sendMessage(sender);
+            outputStream.writeObject(file);
+            
+        } catch (IOException | ClassNotFoundException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
         
     }
 
@@ -271,6 +328,7 @@ public class Server implements Runnable {
     }
 
     private boolean isAlreadyRegistered(String userName) {
+        
         for (userData ud : NetworkThread.allUsers) {
             if(userName.equals(ud.userName))
             {
@@ -291,16 +349,31 @@ public class Server implements Runnable {
 
     private void sendObject(Object obj) {
         try {
-            sendMessage("receiveAnObject");
             outputStream.writeObject(obj);
         } catch (IOException ex) {
             Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
 
-    private void sendMessageTo(Socket chatWith, String msg) {
-        print("To: "+ chatWith.toString());
-        print(msg);
+    private boolean sendMessageTo(Socket chatWith, String msg) {
+        
+        ObjectOutputStream oos = null;
+        try {
+            oos = new ObjectOutputStream(chatWith.getOutputStream());
+            oos.writeObject(msg);
+            print("To: "+ chatWith.toString()+" : "+msg);
+            return true;
+        } catch (IOException ex) {
+            sendMessage("Message cannot be delivered.");
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+            return false;
+        } finally {
+            try {
+                oos.close();
+            } catch (IOException ex) {
+                Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
     }
 
     private void storeOfflineMsg(String msg, String from) {
@@ -319,5 +392,82 @@ public class Server implements Runnable {
             }
         }
         sendMessage(offlineMsgs);
+    }
+
+    private void removeFromOnline() {
+        for (userPublicData upd : NetworkThread.connections) {
+            if(upd.userId == userId && upd.userName.equals(userName))
+            {
+                NetworkThread.connections.remove(upd);
+            }
+        }
+    }
+
+    private void sendFriendRequest() {
+        
+        String user = (String) getMessage();
+                    
+        for ( userPublicData upd : NetworkThread.connections) {
+            if(upd.userName.equals(user))
+            {
+                try {
+                    
+                    ObjectOutputStream oos = new ObjectOutputStream(upd.socket.getOutputStream());
+                    oos.writeObject("rcvfreq");
+                    oos.writeObject(userName);
+                    print(userName + " sent a friend request to "+ upd.userName);
+                    oos.close();
+                
+                } catch (IOException ex) {
+                    Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        }
+        
+        sendMessage("Friend request sent to " + user);
+    }
+
+    private void checkOfflineFile() {
+        //Check offline message
+    }
+
+    private void rejectFriendRequest() {
+        
+        String user = (String) getMessage();
+        
+        for (userPublicData upd : NetworkThread.connections) {
+            if(upd.userName.equals(user))
+            {
+                try {
+                    ObjectOutputStream oos = new ObjectOutputStream(upd.socket.getOutputStream());
+                    oos.writeObject(userName + " rejected your friend request.");
+                    oos.close();
+                } catch (IOException ex) {
+                    Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        }
+        
+        sendMessage("Reject message sent to " + user);
+    }
+    
+    private void acceptFriendRequest() {
+           
+        String user = (String) getMessage();
+        
+        for (userPublicData upd : NetworkThread.connections) {
+            if(upd.userName.equals(user))
+            {
+                try {
+                    ObjectOutputStream oos = new ObjectOutputStream(upd.socket.getOutputStream());
+                    oos.writeObject(userName + " accepted your friend request.");
+                    oos.close();
+                } catch (IOException ex) {
+                    Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        }
+        
+        sendMessage("Now " + user + " you are friend");
     }
 }

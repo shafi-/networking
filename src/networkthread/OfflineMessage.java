@@ -5,13 +5,14 @@
  */
 package networkthread;
 
-import java.net.Socket;
+import java.io.Serializable;
+
 
 /**
  *
  * @author mash
  */
-class OfflineMessage {
+class OfflineMessage implements Serializable{
     String from;
     String to;
     String text;

@@ -5,16 +5,17 @@
  */
 package networkthread;
 
+import java.io.Serializable;
 import java.net.Socket;
 
 /**
  *
  * @author mash
  */
-public class userPublicData {
+public class userPublicData implements Serializable {
     public String userName;
     public int userId;
-    public Socket socket;
+    transient public Socket socket;
 
     public userPublicData(int id, String name, Socket s) {
         userName = name;

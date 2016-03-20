@@ -5,10 +5,12 @@
  */
 package networkthread;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Scanner;
 import java.util.logging.Level;
@@ -28,10 +30,7 @@ public class Client {
 
         try {
             client = new Socket(host, port);
-            inputStream = new ObjectInputStream(client.getInputStream());
-            outputStream = new ObjectOutputStream(client.getOutputStream());
-            outputStream.flush();
-            
+            initialize();
             print("Connected with Server through : " + host + ":" + port);
         } catch (IOException iOException) {
             print("Client-Server connection could not be established.");
@@ -65,16 +64,27 @@ public class Client {
             case "sendmsgto": {
                 sendMessage(instruction);
                 print("Enter friend name: ");
-                String messageTo = sc.nextLine();
-                sendMessage(messageTo);
+                String friendname = sc.nextLine();
+                sendMessage(friendname);
+                print(getMessage());
+                print("Enter message: ");
                 msg = sc.nextLine();
                 sendMessage(msg);
+                print(getMessage());
                 break;
             }
             case "sendfreq": {
+                print("Enter user name: ");
                 String friend = sc.nextLine();
                 sendFriendRequest(instruction,friend);
                 break;
+            }
+            
+            case "rcvfreq": {
+                String user = (String) getMessage();
+                print("You have a friend request from "+user);
+                print("To accept write accept. To reject write reject.");
+                handleFriendRequest(user);
             }
             case "freqs": {
                 ShowRequests(instruction);
@@ -94,13 +104,26 @@ public class Client {
                 break;
             }
             case "accept": {
-                acceptFriendRequest(instruction);
+                String nameOfReq = sc.nextLine();
+                acceptFriendRequest(instruction, nameOfReq );
                 break;
             }
             case "sendfile": {
-                String fileName = sc.nextLine();
-                sendFile(instruction,fileName);
+                sendFile(instruction);
                 break;
+            }
+            
+            case "rcvfile":{
+                try {
+                    String sender = (String) getMessage();
+                    print(sender+" sent a file.");
+                    File file = new File((System.getProperty("user.dir")+"/"+"receivedfileFrom"+sender));
+                    byte[] content = (byte[]) inputStream.readObject();
+                    Files.write(file.toPath(),content);
+                    
+                } catch (IOException | ClassNotFoundException ex) {
+                    Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
+                }
             }
             
             case "exit":{
@@ -134,6 +157,7 @@ public class Client {
             outputStream.flush();
             return true;
         } catch (IOException ex) {
+            
             Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
             return false;
         }
@@ -223,12 +247,14 @@ public class Client {
         
         ArrayList<userPublicData> onlineUsers = new ArrayList<userPublicData>();
         
+        
         onlineUsers = (ArrayList<userPublicData>) getMessage();
         
+        print("Online users: ");
         for (userPublicData onlineUser : onlineUsers) {
             print(onlineUser.userName+"   "+onlineUser.userId);
         }
-        print(onlineUsers.toString());
+        
     }
 
     private static void showFriendList(String instruction) {
@@ -246,29 +272,41 @@ public class Client {
         print(serverReply);
         
     //Extra
-        ShowRequests("freqs");
+    /*        ShowRequests("freqs");
+    serverReply = (String) getMessage();
+    print(serverReply);*/    }
+
+    private static void acceptFriendRequest(String instruction, String user) {
+        sendMessage(instruction);
+        sendMessage(user);
         serverReply = (String) getMessage();
         print(serverReply);
     }
 
-    private static void acceptFriendRequest(String instruction) {
+    private static void sendFile(String instruction) {
         sendMessage(instruction);
-        String friend = sc.nextLine();
-        sendMessage(friend);
-        serverReply = (String) getMessage();
-        print(serverReply);
-    }
-
-    private static void sendFile(String instruction, String fileName) {
-        sendMessage(instruction);
-        transferFile(fileName);
+        
+        print("Enter friend's name: ");
+        String recver = sc.next();
+        
+        print("Enter file name: ");
+        String fileName = sc.next();
+        
+        transferFile(fileName,recver);
         
         serverReply = (String) getMessage();
         print(serverReply);
     }
 
-    private static void transferFile(String fileName) {
-        //transfer file
+    private static void transferFile(String fileName, String recver) {
+        try {
+            //transfer file
+            sendMessage(recver);
+            outputStream.writeObject(fileName);
+            print("File sent");
+        } catch (IOException ex) {
+            Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
     private static void disconnect(String instruction) {
@@ -315,5 +353,32 @@ public class Client {
     private static void handleOfflineMessage() {
         String offlineMsg = (String) getMessage();
         print(offlineMsg);
+    }
+
+    private static void handleFriendRequest(String user) {
+        String reply = sc.next();
+        if( reply.equals("accept"))
+        {
+            acceptFriendRequest(reply,user);
+        }
+        else if(reply.equals("reject"))
+        {
+            rejectFriendRequest(reply, user);
+        }
+        else
+        {
+            print("Invalid option. Try again.");
+            handleFriendRequest(user);
+        }
+    }
+
+    private static void initialize() {
+        try {
+            inputStream = new ObjectInputStream(client.getInputStream());
+            outputStream = new ObjectOutputStream(client.getOutputStream());
+            outputStream.flush();
+        } catch (IOException ex) {
+            Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }
